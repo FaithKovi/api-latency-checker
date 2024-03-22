@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -9,55 +8,50 @@ import (
 )
 
 func TestGetEndpointsFromURL(t *testing.T) {
-	// Mock HTTP server to simulate responses
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `<a href="http://example.com/page1"></a>`)
-		fmt.Fprintln(w, `<a href="http://example.com/page2"></a>`)
+	// Mock HTTP server
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`
+			<a href="http://example.com/page1">Page 1</a>
+			<a href="http://example.com/page2">Page 2</a>
+			<link rel="stylesheet" href="http://example.com/style.css">
+			<img src="http://example.com/image.jpg">
+		`))
 	}))
-	defer ts.Close()
+	defer mockServer.Close()
 
-	endpoints, err := getEndpointsFromURL(ts.URL)
+	url := mockServer.URL
+	endpoints, err := getEndpointsFromURL(url)
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Errorf("getEndpointsFromURL(%s) returned an error: %v", url, err)
 	}
 
-	expected := []string{"http://example.com/page1", "http://example.com/page2"}
-	for _, endpoint := range expected {
-		found := false
-		for _, e := range endpoints {
-			if e == endpoint {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Endpoint %s not found", endpoint)
+	expectedEndpoints := []string{"http://example.com/page1", "http://example.com/page2"}
+	for i, expected := range expectedEndpoints {
+		if endpoints[i] != expected {
+			t.Errorf("Expected endpoint %s at index %d, got %s", expected, i, endpoints[i])
 		}
 	}
 }
 
 func TestCheckLatency(t *testing.T) {
-	// Mock HTTP server to simulate responses
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(100 * time.Millisecond) // Simulate delay
+	// Mock HTTP server
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second) // Simulate latency
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer ts.Close()
+	defer mockServer.Close()
 
-	timeout := 1 * time.Second
-	start := time.Now()
-	latency, err := checkLatency(ts.URL, timeout)
-	elapsed := time.Since(start)
-
+	url := mockServer.URL
+	timeout := 5 * time.Second // Increase timeout duration
+	latency, err := checkLatency(url, timeout)
 	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
+		t.Errorf("checkLatency(%s, %v) returned an error: %v", url, timeout, err)
 	}
 
-	if latency < 100*time.Millisecond {
-		t.Errorf("Unexpected latency: %v", latency)
-	}
-
-	if elapsed > timeout {
-		t.Errorf("Request took longer than expected")
+	expected := time.Duration(2 * time.Second)
+	// Allow for a small difference in latency (e.g., 100 milliseconds)
+	maxDeviation := 100 * time.Millisecond
+	if latency < expected-maxDeviation || latency > expected+maxDeviation {
+		t.Errorf("Expected latency around %v, but got %v", expected, latency)
 	}
 }
